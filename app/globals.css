@@ -240,3 +240,7 @@
     @apply font-sans font-mono;
     }
 }
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}

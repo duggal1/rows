@@ -1,23 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes"
 
-function ThemeProvider({
-  children,
-  ...props
-}: React.ComponentProps<typeof NextThemesProvider>) {
+import {
+  ThemeProvider as ThemeContextProvider,
+  useTheme,
+} from "@/lib/theme-context"
+
+function ThemeProvider({ children }: { children: React.ReactNode }) {
   return (
-    <NextThemesProvider
-      attribute="class"
-      defaultTheme="system"
-      enableSystem
-      disableTransitionOnChange
-      {...props}
-    >
+    <ThemeContextProvider>
       <ThemeHotkey />
       {children}
-    </NextThemesProvider>
+    </ThemeContextProvider>
   )
 }
 
@@ -47,7 +42,7 @@ function ThemeHotkey() {
         return
       }
 
-      if (event.key.toLowerCase() !== "d") {
+      if (!event.key || event.key.toLowerCase() !== "d") {
         return
       }
 

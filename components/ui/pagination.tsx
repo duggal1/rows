@@ -86,7 +86,7 @@ export function PaginationPrevious({
     <PaginationLink
       aria-label="Go to previous page"
       className={cn("max-sm:aspect-square max-sm:p-0", className)}
-      size="default"
+      size="sm"
       {...props}
     >
       <ChevronLeftIcon className="sm:-ms-1" />
@@ -103,7 +103,7 @@ export function PaginationNext({
     <PaginationLink
       aria-label="Go to next page"
       className={cn("max-sm:aspect-square max-sm:p-0", className)}
-      size="default"
+      size="sm"
       {...props}
     >
       <span className="max-sm:hidden">Next</span>
