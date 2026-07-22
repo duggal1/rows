@@ -225,6 +225,7 @@ export async function cloneSite(rawUrl: string): Promise<CloneResponse> {
 
   // --- JS: inline external scripts (parallel, limited concurrency) ---
   const scriptTags = $("script").toArray()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const jsFetchTasks: { abs: string; el: any }[] = []
 
   for (const script of scriptTags) {
