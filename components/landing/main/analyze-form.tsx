@@ -5,7 +5,7 @@ import { Globe02Icon } from "@hugeicons/core-free-icons"
 import { useMemo, useRef, useState } from "react"
 
 import { Spinner } from "@/components/ui/loading-state/spinner"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -62,7 +62,7 @@ export function AnalyzeForm({ onSubmit, isPending }: AnalyzeFormProps) {
   return (
     <form onSubmit={handleSubmit}>
       <div
-        className={`flex items-center gap-2 rounded-xl dark:bg-zinc-900/80 bg-zinc-50/80 px-5 py-1.5 transition-colors ${
+        className={`flex items-center gap-2 rounded-xl dark:bg-zinc-900 bg-zinc-50 px-5 py-2 transition-colors ${
           hasError ? "ring-1 ring-destructive/60" : ""
         }`}
       >
@@ -96,14 +96,15 @@ export function AnalyzeForm({ onSubmit, isPending }: AnalyzeFormProps) {
           size="sm"
           rounded="lg"
           loading={isPending}
+
         >
           {isPending ? "Cloning…" : "Clone"}
         </Button>
       </div>
       {error && (
-        <Alert className="mt-3 rounded-xl border-destructive/30 bg-destructive/8 px-3 py-2.5 text-destructive-foreground">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
+        <div className="mt-3 rounded-xl bg-rose-100/80 px-3 py-2.5 text-rose-700/90 dark:bg-rose-700/20 dark:text-rose-600">
+          {error}
+        </div>
       )}
     </form>
   )

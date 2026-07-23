@@ -2,12 +2,14 @@
 
 import * as cheerio from "cheerio"
 import { z } from "zod"
+import { stripNoise } from "@/lib/html/strip-noise"
 
 const urlSchema = z.string().url()
 
 export interface CloneResult {
   html: string
   cleanHtml: string
+  designHtml: string
   css: string
   title: string
   sourceUrl: string
@@ -308,8 +310,10 @@ ${indent(formatHtml(cBodyHtml), 2)}
 </body>
 </html>`)
 
+  const designHtml = stripNoise(cleanSnapshot)
+
   return {
     ok: true,
-    data: { html, cleanHtml, css, title, sourceUrl: targetUrl },
+    data: { html, cleanHtml, designHtml, css, title, sourceUrl: targetUrl },
   }
 }

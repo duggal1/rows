@@ -161,9 +161,12 @@ export const AnimatedThemeToggler = ({
   ...props
 }: AnimatedThemeTogglerProps) => {
   const shape = variant ?? "circle"
+  const [mounted, setMounted] = useState(false)
   const isControlled = theme !== undefined
   const [internalIsDark, setInternalIsDark] = useState(false)
   const isDark = isControlled ? theme === "dark" : internalIsDark
+
+  useEffect(() => { setMounted(true) }, [])
   const buttonRef = useRef<HTMLButtonElement>(null)
   const isTransitioningRef = useRef(false)
 
@@ -297,7 +300,7 @@ export const AnimatedThemeToggler = ({
       className={cn(className)}
       {...props}
     >
-      {isDark ? <HugeiconsIcon icon={Sun01Icon} /> : <HugeiconsIcon icon={Moon02Icon} />}
+      {mounted ? (isDark ? <HugeiconsIcon icon={Sun01Icon} size={16} /> : <HugeiconsIcon icon={Moon02Icon} size={16} />) : <span className="size-5" />}
       <span className="sr-only">Toggle theme</span>
     </button>
   )
