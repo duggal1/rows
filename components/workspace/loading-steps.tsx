@@ -8,13 +8,13 @@ import { cn } from "@/lib/utils"
 const STEPS = [
   "Initializing",
   "Fetching website",
-  "Extracting HTML",
-  "Extracting CSS",
-  "Analyzing design",
-  "Building context",
-  "Generating components",
-  "Writing files",
-  "Formatting code",
+  "Extracting HTML & CSS",
+  "Extracting assets",
+  "Starting E2B + dev server",
+  "Sending to Gemini",
+  "Generating code",
+  "Writing files (HMR)",
+  "Waiting for dev server",
   "Finalizing",
 ]
 

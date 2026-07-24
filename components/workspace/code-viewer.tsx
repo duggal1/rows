@@ -5,7 +5,6 @@ import { Highlight, themes } from "prism-react-renderer"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardPanel } from "@/components/ui/card"
 import { useTheme } from "@/lib/theme-context"
-import { cn } from "@/lib/utils"
 
 interface CodeViewerProps {
   code: string
@@ -41,7 +40,7 @@ export function CodeViewer({ code, language = "tsx", fileName }: CodeViewerProps
           <Highlight
             theme={isDark ? themes.vsDark : themes.vsLight}
             code={code.trim()}
-            language={language as any}
+            language={language}
           >
             {({ tokens, getLineProps, getTokenProps }) => (
               <>

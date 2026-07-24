@@ -8,9 +8,15 @@ export interface WorkspaceData {
   title: string
   html: string
   css: string
+  designHtml: string
   files: GeneratedFile[]
   status: "pending" | "processing" | "done" | "error"
+  createdAt?: number
+  prompt?: string
   error?: string
+  summary?: string
+  sandboxId?: string
+  previewUrl?: string
 }
 
 export interface FileTreeNode {

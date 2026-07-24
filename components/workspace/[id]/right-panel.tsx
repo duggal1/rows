@@ -18,6 +18,7 @@ interface RightPanelProps {
   selectedContent: string | null
   copied: boolean
   html: string
+  previewUrl?: string
   isDownloading: boolean
   isDone: boolean
   onTabChange: (tab: "code" | "preview") => void
@@ -38,6 +39,7 @@ export function RightPanel({
   selectedContent,
   copied,
   html,
+  previewUrl,
   isDownloading,
   isDone,
   onTabChange,
@@ -110,7 +112,7 @@ export function RightPanel({
           />
         ) : (
           <div className="h-full p-6">
-            <PreviewPanel html={html} mode={previewMode} />
+            <PreviewPanel previewUrl={previewUrl} mode={previewMode} />
           </div>
         )}
       </div>

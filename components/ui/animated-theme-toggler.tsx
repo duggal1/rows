@@ -300,7 +300,10 @@ export const AnimatedThemeToggler = ({
       className={cn(className)}
       {...props}
     >
-      {mounted ? (isDark ? <HugeiconsIcon icon={Sun01Icon} size={16} /> : <HugeiconsIcon icon={Moon02Icon} size={16} />) : <span className="size-5" />}
+      {mounted ? (isDark ? <HugeiconsIcon icon={Sun01Icon} size={16} className="cursor-pointer" /> 
+      : <HugeiconsIcon icon={Moon02Icon} size={16} className="cursor-pointer" /> )
+      : <span className="size-5" />
+      }
       <span className="sr-only">Toggle theme</span>
     </button>
   )

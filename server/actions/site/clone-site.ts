@@ -3,6 +3,7 @@
 import * as cheerio from "cheerio"
 import { z } from "zod"
 import { stripNoise } from "@/lib/html/strip-noise"
+import { terminal } from "@/server/terminal/logger"
 
 const urlSchema = z.string().url()
 
@@ -13,6 +14,9 @@ export interface CloneResult {
   css: string
   title: string
   sourceUrl: string
+  svgs: string[]
+  imageUrls: string[]
+  jsSnippets: string[]
 }
 
 type CloneResponse =
@@ -81,35 +85,149 @@ function stripHtmlComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, "")
 }
 
-export async function cloneSite(rawUrl: string): Promise<CloneResponse> {
-  const parsed = urlSchema.safeParse(rawUrl)
-  if (!parsed.success) return { ok: false, error: "That's not a valid URL." }
-  const targetUrl = parsed.data
-
-  let res: Response
+async function fetchWithScrapingBee(targetUrl: string): Promise<string | null> {
+  const apiKey = process.env.SCRAPINGBEE_API_KEY
+  if (!apiKey) return null
   try {
-    res = await fetch(targetUrl, {
+    const params = new URLSearchParams({
+      api_key: apiKey,
+      url: targetUrl,
+      render_js: "true",
+      wait: "1500",
+    })
+    const res = await fetch(`https://app.scrapingbee.com/api/v1/?${params}`, {
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!res.ok) return null
+    const text = await res.text()
+    if (text.length < 100) return null
+    return text
+  } catch {
+    return null
+  }
+}
+
+async function fetchWithFallback(targetUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(targetUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
       },
       signal: AbortSignal.timeout(15_000),
     })
+    if (!res.ok) return null
+    return await res.text()
   } catch {
-    return {
-      ok: false,
-      error: "Couldn't reach that URL — check it's live and public.",
+    return null
+  }
+}
+
+function stripPostHtml(html: string): string {
+  const idx = html.indexOf("</html>")
+  return idx !== -1 ? html.slice(0, idx + "</html>".length) : html
+}
+
+async function inlineExternalSvgs(html: string): Promise<string> {
+  const $ = cheerio.load(html)
+  const svgImgs: { el: ReturnType<typeof $>; url: string }[] = []
+
+  $("img[src]").each((_, el) => {
+    const src = $(el).attr("src") || ""
+    if (/\.svg(\?|#|$)/i.test(src) && (src.startsWith("http") || src.startsWith("//"))) {
+      svgImgs.push({ el: $(el), url: src.startsWith("//") ? `https:${src}` : src })
     }
+  })
+
+  if (svgImgs.length === 0) return html
+
+  const results = await Promise.allSettled(
+    svgImgs.map(async ({ url }) => {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const svgText = await res.text()
+      const svgMatch = svgText.match(/<svg[\s\S]*?<\/svg>/i)
+      if (!svgMatch) throw new Error("No <svg> found in response")
+      return { url, svg: svgMatch[0] }
+    }),
+  )
+
+  const inline = new Map<string, string>()
+  for (const result of results) {
+    if (result.status === "fulfilled") inline.set(result.value.url, result.value.svg)
   }
 
-  if (!res.ok)
-    return { ok: false, error: `Site responded with ${res.status}.` }
+  svgImgs.forEach(({ el, url }) => {
+    const svg = inline.get(url)
+    if (!svg) return
+    const alt = el.attr("alt") || ""
+    const className = el.attr("class") || ""
+    const style = el.attr("style") || ""
+    const width = el.attr("width")
+    const height = el.attr("height")
 
-  const rawHtml = await res.text()
-  const $ = cheerio.load(rawHtml)
+    const $svg = $(svg)
+    if (alt) $svg.attr("aria-label", alt)
+    if (className) $svg.attr("class", className)
+    if (style) $svg.attr("style", style)
+    if (width && !$svg.attr("width")) $svg.attr("width", width)
+    if (height && !$svg.attr("height")) $svg.attr("height", height)
+
+    el.replaceWith($svg)
+  })
+
+  return $.html()
+}
+
+export async function cloneSite(rawUrl: string): Promise<CloneResponse> {
+  const parsed = urlSchema.safeParse(rawUrl)
+  if (!parsed.success) return { ok: false, error: "That's not a valid URL." }
+  const targetUrl = parsed.data
+
+  // ━━━ Step 1: Fetch HTML — try ScrapingBee first, fall back to raw fetch ━━━
+  let renderedHtml: string | null
+
+  terminal.info(`Fetching ${targetUrl}`)
+  const fetchTimer = terminal.phase("fetch")
+
+  renderedHtml = await fetchWithScrapingBee(targetUrl)
+  if (renderedHtml) {
+    terminal.done("ScrapingBee snapshot captured")
+  } else {
+    terminal.warn("ScrapingBee unavailable — falling back to raw fetch")
+    renderedHtml = await fetchWithFallback(targetUrl)
+    if (!renderedHtml) {
+      fetchTimer.end()
+      return { ok: false, error: "Couldn't reach that URL — check it's live and public." }
+    }
+  }
+  fetchTimer.end()
+
+  // Strip anything after </html> (injected beacons, RSC payloads, garbage)
+  renderedHtml = stripPostHtml(renderedHtml)
+
+  // --- Pre-sanitize: strip elements that break the backend pipeline ---
+  // Strip ALL <script> tags — they cause iframe crashes and waste Gemini tokens
+  renderedHtml = renderedHtml.replace(/<script[\s\S]*?<\/script>/gi, "")
+  renderedHtml = renderedHtml.replace(/<script[^>]*\/>/gi, "")
+  // Strip event handler attributes
+  renderedHtml = renderedHtml.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, "")
+  renderedHtml = renderedHtml.replace(/\s+on\w+\s*=\s*\S+/gi, "")
+  // Strip <noscript> — useless when scripts are removed
+  renderedHtml = renderedHtml.replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
+  // Strip <meta http-equiv="refresh"> — would redirect iframe
+  renderedHtml = renderedHtml.replace(/<meta[^>]+http-equiv\s*=\s*["']refresh["'][^>]*\/?>/gi, "")
+  // Strip <canvas> — AI cannot replicate canvas graphics
+  renderedHtml = renderedHtml.replace(/<canvas[\s\S]*?<\/canvas>/gi, "")
+  renderedHtml = renderedHtml.replace(/<canvas[^>]*\/?>/gi, "")
+  // Strip <iframe>, <object>, <embed> — nested frames cause issues
+  renderedHtml = renderedHtml.replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+  renderedHtml = renderedHtml.replace(/<object[\s\S]*?<\/object>/gi, "")
+  renderedHtml = renderedHtml.replace(/<embed[^>]*\/?>/gi, "")
+
+  const $ = cheerio.load(renderedHtml)
 
   // --- Universal cleanup (applies to both full and clean versions) ---
-  $("noscript").remove()
   $('link[rel="preload"][as="script"]').remove()
   $('link[rel="modulepreload"]').remove()
 
@@ -192,6 +310,7 @@ export async function cloneSite(rawUrl: string): Promise<CloneResponse> {
   const cleanSnapshot = $.html()
 
   // --- CSS: inline styles + fetch external stylesheets (parallel) ---
+  const cssTimer = terminal.phase("css-extract")
   const inlineCss =
     $("style")
       .map((_, el) => $(el).html() ?? "")
@@ -224,44 +343,7 @@ export async function cloneSite(rawUrl: string): Promise<CloneResponse> {
   )
 
   const css = [inlineCss, ...cssResults.filter(Boolean)].join("\n\n")
-
-  // --- JS: inline external scripts (parallel, limited concurrency) ---
-  const scriptTags = $("script").toArray()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const jsFetchTasks: { abs: string; el: any }[] = []
-
-  for (const script of scriptTags) {
-    const $script = $(script)
-    const src = $script.attr("src")
-    const type = $script.attr("type")
-    if (type && !["text/javascript", "module", undefined].includes(type)) continue
-    if (!src) continue
-    if (type === "module") continue
-    try {
-      const abs = new URL(src, targetUrl).toString()
-      jsFetchTasks.push({ abs, el: script })
-    } catch {
-    }
-  }
-
-  const jsResults = await Promise.all(
-    jsFetchTasks.map(async ({ abs, el }) => {
-      try {
-        const jsRes = await fetch(abs, { signal: AbortSignal.timeout(4_000) })
-        if (!jsRes.ok) return null
-        const jsCode = await jsRes.text()
-        return { el, jsCode }
-      } catch {
-        return null
-      }
-    }),
-  )
-
-  for (const result of jsResults) {
-    if (!result) continue
-    const { el, jsCode } = result
-    $(el).replaceWith(`<script>${jsCode}</script>`)
-  }
+  cssTimer.end()
 
   // --- Build the full version (for iframe — everything inlined) ---
   const bodyHtml = $("body").html() || ""
@@ -280,10 +362,9 @@ ${bodyHtml}
 </html>`
 
   // --- Build the clean version (for download) ---
-  // No SVGs, formatted CSS, no inline scripts, no HTML comments, well-formatted
+  // Formatted CSS, no inline scripts, no HTML comments, well-formatted
   const $c = cheerio.load(cleanSnapshot)
 
-  $c("svg").remove()
   $c("link[rel='stylesheet']").remove()
   $c("style").remove()
   $c("script").each((_, el) => {
@@ -310,10 +391,36 @@ ${indent(formatHtml(cBodyHtml), 2)}
 </body>
 </html>`)
 
-  const designHtml = stripNoise(cleanSnapshot)
+  const designHtml = await inlineExternalSvgs(stripNoise(cleanSnapshot))
+
+  const $assets = cheerio.load(designHtml)
+  const svgs: string[] = []
+  $assets("svg").each((_, el) => {
+    svgs.push($assets(el).toString())
+  })
+  const imageUrls: string[] = []
+  $assets("img[src]").each((_, el) => {
+    const src = $assets(el).attr("src")
+    if (src && src.startsWith("http")) imageUrls.push(src)
+  })
+  $assets("[style*='background-image'], [style*='background']").each((_, el) => {
+    const style = $assets(el).attr("style") || ""
+    const m = style.match(/url\(["']?([^"')]+)["']?\)/g)
+    if (m) m.forEach((u) => {
+      const url = u.replace(/url\(["']?|["']?\)/g, "")
+      if (url.startsWith("http")) imageUrls.push(url)
+    })
+  })
+  const jsSnippets: string[] = []
+  $assets("script:not([src])").each((_, el) => {
+    const code = $assets(el).html() || ""
+    const trimmed = code.trim()
+    if (trimmed && trimmed.length < 5_000) jsSnippets.push(trimmed)
+  })
+  terminal.done(`Extracted ${svgs.length} SVGs, ${imageUrls.length} images, ${jsSnippets.length} JS snippets`)
 
   return {
     ok: true,
-    data: { html, cleanHtml, designHtml, css, title, sourceUrl: targetUrl },
+    data: { html, cleanHtml, designHtml, css, title, sourceUrl: targetUrl, svgs, imageUrls, jsSnippets },
   }
 }

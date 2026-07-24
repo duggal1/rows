@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -29,6 +30,8 @@ import {
 import { useTheme } from "@/lib/theme-context"
 import { faviconUrl } from "./utils"
 
+import type { AttachedFile } from "@/hooks/use-file-upload"
+
 interface LeftPanelProps {
   domain: string
   folderName: string
@@ -38,8 +41,112 @@ interface LeftPanelProps {
   isDownloading: boolean
   inputValue: string
   router: AppRouterInstance
+  url?: string | null
+  prompt?: string | null
+  summary?: string
   onDownloadZip: () => void
   onInputChange: (value: string) => void
+  onComposeSubmit: (text: string, files: AttachedFile[], model: string) => void
+}
+
+function SummaryRenderer({ summary }: { summary: string }) {
+  const lines = summary.split("\n")
+  const elements: React.ReactElement[] = []
+  let inList = false
+  let listItems: React.ReactElement[] = []
+
+  function flushList() {
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key={`list-${elements.length}`} className="space-y-1.5">
+          {listItems}
+        </ul>,
+      )
+      listItems = []
+    }
+    inList = false
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+
+    if (!trimmed) {
+      flushList()
+      continue
+    }
+
+    if (trimmed.startsWith("## ")) {
+      flushList()
+      elements.push(
+        <h2 key={`h-${i}`} className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 mt-5 mb-2 first:mt-0">
+          {trimmed.replace("## ", "")}
+        </h2>,
+      )
+    } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+      inList = true
+      const text = trimmed.slice(2)
+      const parts = text.split(/(`[^`]+`)/g)
+      listItems.push(
+        <li key={`li-${i}`} className="text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed">
+          {parts.map((part, j) =>
+            part.startsWith("`") && part.endsWith("`") ? (
+              <span
+                key={j}
+                className="inline-flex items-center rounded-md bg-blue-50/80 px-2 py-0.5 text-[12px] font-medium text-blue-700 dark:bg-blue-700/15 dark:text-blue-500"
+              >
+                {part.slice(1, -1)}
+              </span>
+            ) : (
+              <span key={j}>{part}</span>
+            ),
+          )}
+        </li>,
+      )
+    } else {
+      flushList()
+      elements.push(
+        <p key={`p-${i}`} className="text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed">
+          {trimmed}
+        </p>,
+      )
+    }
+  }
+  flushList()
+
+  return <div className="space-y-1">{elements}</div>
+}
+
+function ChatBubble({ url, prompt, summary, isProcessing, isDone }: {
+  url?: string | null
+  prompt?: string | null
+  summary?: string
+  isProcessing: boolean
+  isDone: boolean
+}) {
+  const displayPrompt = prompt || "Clone this website"
+
+  return (
+    <div className="space-y-5">
+      <div className="min-w-0 flex-1 rounded-2xl border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-950">
+        {url && (
+          <p className="text-[13px] font-medium break-all text-blue-600 underline decoration-dotted underline-offset-2 dark:text-blue-400">{url}</p>
+        )}
+        <p className="mt-1 text-[13px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+          {displayPrompt}
+        </p>
+      </div>
+
+      {isDone && (
+        <div className="flex gap-3">
+          <img src="/gemini-color.svg" alt="Gemini" className="mt-0.5 size-5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <SummaryRenderer summary={summary || ""} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function LeftPanel({
@@ -51,8 +158,12 @@ export function LeftPanel({
   isDownloading,
   inputValue,
   router,
+  url,
+  prompt,
+  summary,
   onDownloadZip,
   onInputChange,
+  onComposeSubmit,
 }: LeftPanelProps) {
   const { theme, setTheme } = useTheme()
 
@@ -161,13 +272,22 @@ export function LeftPanel({
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {isProcessing && !isDone ? (
-          <ScrollArea className="h-full">
-            <div className="p-5">
+        <ScrollArea className="h-full">
+          <div className="p-5 space-y-4">
+            <ChatBubble
+              url={url}
+              prompt={prompt}
+              summary={summary}
+              isProcessing={isProcessing}
+              isDone={isDone}
+            />
+          </div>
+          {isProcessing && !isDone && (
+            <div className="px-5 pb-5">
               <LoadingSteps currentStep={step} />
             </div>
-          </ScrollArea>
-        ) : null}
+          )}
+        </ScrollArea>
       </div>
 
       <InputComposer value={inputValue} onChange={onInputChange} />

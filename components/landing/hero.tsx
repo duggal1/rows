@@ -1,15 +1,16 @@
 "use client"
 
-import { AnalyzeForm } from "./main/analyze-form"
+import { AnalyzeForm, type AnalyzeSubmitPayload } from "./main/analyze-form"
+import SideRays from "./side-rays"
 
 interface HeroProps {
-  onSubmit: (url: string) => void
+  onSubmit: (payload: AnalyzeSubmitPayload) => void
   isPending: boolean
 }
 
 export function Hero({ onSubmit, isPending }: HeroProps) {
   return (
-    <section className="relative flex min-h-[calc(100vh-env(safe-area-inset-bottom))] w-full flex-col items-center overflow-hidden bg-background pt-32 md:min-h-screen md:pb-64">
+    <section className="relative flex w-full flex-col items-center overflow-hidden pt-32 pb-16 md:pb-20" >
       <div className="relative z-10 flex w-full max-w-187.5 flex-col items-center gap-8 px-4">
         <h1 className="mx-auto max-w-4xl text-center text-[36px] leading-[0.98] tracking-[-0.06em] text-foreground sm:text-[40px] md:text-[48px]">
           Clone any website.

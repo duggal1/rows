@@ -7,10 +7,35 @@ import { makeBoundaryToken } from "@/lib/codegen/protocol"
 import { FileStreamParser } from "@/lib/codegen/protocol-parser"
 import { terminal } from "@/server/terminal/logger"
 
+const FORBIDDEN_FILES = new Set([
+  "globals.css", "layout.tsx", "next.config.ts", "tailwind.config.ts",
+  "app/globals.css", "app/layout.tsx",
+])
+
+function normalizeFilePath(raw: string): string | null {
+  let p = raw.replace(/\\/g, "/")
+  p = p.replace(/^project\//, "")
+  p = p.replace(/^src\//, "")
+  p = p.replace(/^\/+/, "")
+  if (FORBIDDEN_FILES.has(p)) return null
+  if (p === "page.tsx") return "app/page.tsx"
+  return p
+}
+
+const attachedFileSchema = z.object({
+  name: z.string(),
+  content: z.string(),
+})
+
 const inputSchema = z.object({
   url: z.string().url().optional(),
   htmlDump: z.string().optional(),
   cssDump: z.string().optional(),
+  prompt: z.string().optional(),
+  attachedFiles: z.array(attachedFileSchema).optional(),
+  svgs: z.array(z.string()).optional(),
+  imageUrls: z.array(z.string()).optional(),
+  jsSnippets: z.array(z.string()).optional(),
 })
 
 export interface GeneratedFile {
@@ -26,7 +51,7 @@ export interface StreamChunk {
 }
 
 export type GenerateCodeResponse =
-  | { ok: true; data: { files: GeneratedFile[]; raw: string } }
+  | { ok: true; data: { files: GeneratedFile[]; raw: string; summary: string } }
   | { ok: false; error: string }
 
 export async function generateCode(
@@ -34,10 +59,10 @@ export async function generateCode(
 ): Promise<GenerateCodeResponse> {
   const parsed = inputSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: "Invalid input." }
-  const { htmlDump, cssDump, url } = parsed.data
+  const { htmlDump, cssDump, url, prompt, attachedFiles, svgs, imageUrls, jsSnippets } = parsed.data
 
-  if (!htmlDump && !url) {
-    return { ok: false, error: "Provide a URL or an HTML dump." }
+  if (!htmlDump) {
+    return { ok: false, error: "Provide an HTML dump (use cloneSite to ScrapingBee-render the URL first)." }
   }
 
   const apiKey = process.env.GEMINI_API_KEY
@@ -45,37 +70,12 @@ export async function generateCode(
     return { ok: false, error: "GEMINI_API_KEY not configured." }
   }
 
-  let html = htmlDump ?? ""
-  let css = cssDump ?? ""
-
-  if (url && !html) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (!res.ok) return { ok: false, error: `URL responded with ${res.status}.` }
-      const text = await res.text()
-
-      const styleMatches = text.match(/<style[^>]*>([\s\S]*?)<\/style>/gi)
-      if (styleMatches) {
-        css = styleMatches
-          .map((s) => s.replace(/<\/?style[^>]*>/gi, ""))
-          .join("\n")
-      }
-
-      const bodyMatch = text.match(/<body[^>]*>([\s\S]*)<\/body>/i)
-      html = bodyMatch?.[1] ?? text
-    } catch (e) {
-      return { ok: false, error: `Failed to fetch URL: ${e}` }
-    }
-  }
+  const html = htmlDump
+  const css = cssDump ?? ""
 
   const token = makeBoundaryToken()
-  const prompt = buildUserPrompt(html.slice(0, 100_000), css.slice(0, 50_000))
+  const slicedSvgs = svgs?.map((s) => s.slice(0, 10_000)) ?? []
+  const userPrompt = buildUserPrompt(html.slice(0, 200_000), css.slice(0, 100_000), prompt, attachedFiles, url, slicedSvgs, imageUrls, jsSnippets)
 
   terminal.init("Gemini 3.6 Flash", "medium")
   terminal.context("html", html.length)
@@ -88,9 +88,9 @@ export async function generateCode(
   try {
     const result = await client.createInteraction({
       systemInstruction: buildSystemPrompt(token),
-      input: prompt,
+      input: userPrompt,
       thinkingLevel: "medium",
-      temperature: 0.1,
+      temperature: 0.9,
       maxOutputTokens: 16_384,
     })
 
@@ -104,18 +104,23 @@ export async function generateCode(
       (e) => e.type === "file_complete",
     ) as { type: "file_complete"; file: { path: string; content: string } }[]
 
-    const files = fileEvents.map((e) => ({ path: e.file.path, content: e.file.content }))
+    const files = fileEvents
+      .map((e) => {
+        const p = normalizeFilePath(e.file.path)
+        return p ? { path: p, content: e.file.content } : null
+      })
+      .filter((f): f is { path: string; content: string } => f !== null)
 
     if (files.length === 0) {
       return {
         ok: false,
-        error: "AI returned no files. Raw response was empty or unparseable.",
+        error: "AI returned no files (all paths were forbidden or unparseable).",
       }
     }
 
     terminal.files(files.length)
 
-    return { ok: true, data: { files, raw: result.text } }
+    return { ok: true, data: { files, raw: result.text, summary: parser.getSummary() } }
   } catch (e) {
     terminal.error(String(e))
     return { ok: false, error: `AI generation failed: ${e}` }

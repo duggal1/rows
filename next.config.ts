@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "4mb",
     },
   },
+  logging: {
+    serverFunctions: false,
+  },
 }
 
 export default nextConfig

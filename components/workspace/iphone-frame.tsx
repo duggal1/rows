@@ -30,10 +30,20 @@ export function IPhoneFrame({ children, className }: IPhoneFrameProps) {
           height={773}
           rx={72}
           ry={72}
-          fill={isDark ? "#1c1c1e" : "#FFFFFF"}
-          stroke={isDark ? "#FFFFFF" : "#000000"}
-          strokeWidth={15}
+          fill="#FFFFFF"
+          stroke={isDark ? "#E4E4E7" : "#000000"}
+          strokeWidth={6}
         />
+      </svg>
+      <div className="absolute left-[19px] top-[19px] z-10 h-[756px] w-[348px] overflow-hidden rounded-[56px] pt-12">
+        {children}
+      </div>
+      <svg
+        width={386}
+        height={794}
+        viewBox="0 0 386 794"
+        className="pointer-events-none absolute inset-0 z-20"
+      >
         <rect
           x={138}
           y={27}
@@ -41,7 +51,7 @@ export function IPhoneFrame({ children, className }: IPhoneFrameProps) {
           height={32}
           rx={16}
           ry={16}
-          fill={isDark ? "#FFFFFF" : "#000000"}
+          fill={isDark ? "rgba(245,245,245,0.8)" : "#000000"}
         />
         <circle
           cx={211}
@@ -50,9 +60,6 @@ export function IPhoneFrame({ children, className }: IPhoneFrameProps) {
           fill="#34C759"
         />
       </svg>
-      <div className="absolute left-[22px] top-[22px] h-[750px] w-[342px] overflow-hidden rounded-[56px]">
-        {children}
-      </div>
     </div>
   )
 }

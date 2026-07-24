@@ -24,8 +24,12 @@ export default function WorkspacePage({
         isDownloading={w.isDownloading}
         inputValue={w.inputValue}
         router={w.router}
+        url={w.url}
+        prompt={w.prompt}
+        summary={w.summary}
         onDownloadZip={w.downloadZip}
         onInputChange={w.setInputValue}
+        onComposeSubmit={w.handleRegenerate}
       />
       <RightPanel
         tab={w.tab}
@@ -36,7 +40,7 @@ export default function WorkspacePage({
         fileName={w.fileName}
         selectedContent={w.selectedContent}
         copied={w.copied}
-        html={w.data?.html ?? ""}
+        html={w.previewHtml}
         isDownloading={w.isDownloading}
         isDone={w.isDone}
         onTabChange={w.setTab}

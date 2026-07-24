@@ -20,50 +20,69 @@ if (!res.ok) {
 }
 
 const raw = await res.text()
+const $raw = cheerio.load(raw)
+
+// ━━━ Inspect every SVG before stripping ━━━
+console.log("━━━ ALL SVGs BEFORE STRIPPING ━━━\n")
+
+const svgs = $raw("svg")
+let idx = 0
+svgs.each((_, el) => {
+  const inner = $raw(el).html() ?? ""
+  const charLen = inner.length
+  const preview = inner.slice(0, 100).replace(/\n/g, " ").trim()
+  const willRemove = charLen > 1000
+  const tag = willRemove ? "❌ REMOVE (large)" : "✅ KEEP (small)"
+  console.log(`  #${idx}  ${charLen.toString().padStart(5)} chars  ${tag}`)
+  if (charLen < 300) {
+    console.log(`       Content: ${preview}`)
+  } else {
+    console.log(`       Preview: ${preview.slice(0, 100)}...`)
+  }
+  console.log()
+  idx++
+})
+
+console.log(`Total SVGs found: ${svgs.length}`)
+console.log(`Small (≤1000 chars): ${svgs.length - [...svgs].filter((_, i) => ($raw(svgs[i]).html()?.length ?? 0) > 1000).length}`)
+console.log()
+
+// ━━━ Now run stripNoise ━━━
 const stripped = stripNoise(raw)
 
 const rawKb = (raw.length / 1024).toFixed(1)
 const strippedKb = (stripped.length / 1024).toFixed(1)
 
 console.log("━━━ STATS ━━━")
-console.log(`  Raw HTML:      ${rawKb}KB (${raw.length} chars)`)
-console.log(`  Stripped HTML: ${strippedKb}KB (${stripped.length} chars)`)
-console.log(`  Removed:       ${((raw.length - stripped.length) / 1024).toFixed(1)}KB of noise`)
+console.log(`  Raw HTML:           ${rawKb}KB (${raw.length} chars)`)
+console.log(`  Stripped HTML:      ${strippedKb}KB (${stripped.length} chars)`)
+console.log(`  Removed:            ${((raw.length - stripped.length) / 1024).toFixed(1)}KB of noise`)
 
 const scriptCount = (raw.match(/<script/g) || []).length
 const strippedScriptCount = (stripped.match(/<script/g) || []).length
 const svgCount = (raw.match(/<svg/g) || []).length
 const strippedSvgCount = (stripped.match(/<svg/g) || []).length
 
-console.log(`  Script tags:   ${scriptCount} → ${strippedScriptCount}`)
-console.log(`  SVG tags:      ${svgCount} → ${strippedSvgCount}`)
+console.log(`  Script tags:        ${scriptCount} → ${strippedScriptCount}`)
+console.log(`  SVG tags:           ${svgCount} → ${strippedSvgCount}`)
 
-const $ = cheerio.load(stripped)
-const remainingScripts = $("script").length
-const remainingSvgs = $("svg").length
-const remainingNoscripts = $("noscript").length
-const remainingJsonld = $('script[type="application/ld+json"]').length
+// ━━━ Inspect which SVGs survived ━━━
+const $clean = cheerio.load(stripped)
+const surviving = $clean("svg")
+console.log(`\n━━━ SURVIVING SVGs (${surviving.length}) ━━━\n`)
+surviving.each((i, el) => {
+  const inner = $clean(el).html() ?? ""
+  const preview = inner.slice(0, 120).replace(/\n/g, " ").trim()
+  console.log(`  #${i}  (${inner.length} chars)  ${preview}...`)
+})
 
 console.log(`\n━━━ VERIFICATION ━━━`)
+const remainingScripts = $clean("script").length
+const remainingSvgs = $clean("svg").length
+const remainingNoscripts = $clean("noscript").length
+const remainingJsonld = $clean('script[type="application/ld+json"]').length
+
 console.log(`  Scripts remaining:     ${remainingScripts} ${remainingScripts === 0 ? "✅" : "❌"}`)
-console.log(`  SVGs remaining:        ${remainingSvgs} ${remainingSvgs === 0 ? "✅" : "❌"}`)
+console.log(`  SVGs remaining:        ${remainingSvgs}`)
 console.log(`  Noscript remaining:    ${remainingNoscripts} ${remainingNoscripts === 0 ? "✅" : "❌"}`)
 console.log(`  JSON-LD remaining:     ${remainingJsonld} ${remainingJsonld === 0 ? "✅" : "❌"}`)
-
-console.log(`\n━━━ FIRST 700 LINES OF STRIPPED HTML ━━━\n`)
-const lines = stripped.split("\n").slice(0, 700)
-console.log(lines.join("\n"))
-console.log(`\n... (${stripped.split("\n").length - 700} more lines omitted)`)
-
-const hasJs = stripped.includes("<script")
-const hasSvg = stripped.includes("<svg")
-const hasJsonld = stripped.includes("application/ld+json")
-
-console.log(`\n━━━ CLEAN VERDICT ━━━`)
-if (!hasJs && !hasSvg && !hasJsonld) {
-  console.log("  ✅ Clean HTML/CSS only — no JS, no SVG, no JSON-LD")
-} else {
-  if (hasJs) console.log("  ❌ JavaScript still present")
-  if (hasSvg) console.log("  ❌ SVG still present")
-  if (hasJsonld) console.log("  ❌ JSON-LD still present")
-}
